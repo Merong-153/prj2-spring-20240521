@@ -5,9 +5,12 @@ import com.prj2spring20240521.service.member.MemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -45,12 +48,19 @@ public class MemberController {
     }
 
     @GetMapping("list")
+    @PreAuthorize("hasAuthority('SCOPE_admin')")
     public List<Member> list() {
         return service.list();
     }
 
     @GetMapping("{id}")
-    public ResponseEntity get(@PathVariable Integer id) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity get(@PathVariable Integer id,
+                              Authentication authentication) {
+        if (!service.hasAccess(id, authentication)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
         Member member = service.getById(id);
         if (member == null) {
             return ResponseEntity.notFound().build();
@@ -60,23 +70,38 @@ public class MemberController {
     }
 
     @DeleteMapping("{id}")
-    public ResponseEntity delete(@RequestBody Member member) {
-        if (service.hasAccess(member)) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity delete(
+            @RequestBody Member member,
+            Authentication authentication) {
+        if (service.hasAccess(member, authentication)) {
             service.remove(member.getId());
             return ResponseEntity.ok().build();
         }
 
-        // todo: forbidden으로 수정하기
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
     @PutMapping("modify")
-    public ResponseEntity modify(@RequestBody Member member) {
-        if (service.hasAccessModify(member)) {
-            service.modify(member);
-            return ResponseEntity.ok().build();
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity modify(@RequestBody Member member,
+                                 Authentication authentication) {
+        if (service.hasAccessModify(member, authentication)) {
+            Map<String, Object> result = service.modify(member, authentication);
+            return ResponseEntity.ok(result);
         } else {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+    }
+
+    @PostMapping("token")
+    public ResponseEntity token(@RequestBody Member member) {
+        Map<String, Object> map = service.getToken(member);
+
+        if (map == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        return ResponseEntity.ok(map);
     }
 }
